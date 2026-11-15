@@ -1,0 +1,177 @@
+name: pili-hide-dyn-comment
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/pili-hide-dyn-comment.yml'
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout upstream
+        uses: actions/checkout@v4
+        with:
+          repository: bggRGjQaUbCoE/PiliPlus
+          ref: 217fb54f51f6764176319bbdedab2a7522d75401
+          fetch-depth: 0
+
+      - name: Patch dart sources
+        run: |
+          python3 - <<'PY'
+          import io
+
+          def read(p):
+              return io.open(p, encoding='utf-8').read()
+
+          def write(p, s):
+              io.open(p, 'w', encoding='utf-8').write(s)
+
+          p = 'lib/pages/setting/models/reply_settings.dart'
+          s = read(p)
+          anchor = (
+              "    setKey: SettingBoxKey.showBangumiReply,\n"
+              "    defaultVal: true,\n"
+              "  ),\n"
+          )
+          add = anchor + (
+              "  const SwitchModel(\n"
+              "    title: '\u663e\u793a\u52a8\u6001\u8bc4\u8bba',\n"
+              "    subtitle: '\u5173\u95ed\u540e\u52a8\u6001\u8be6\u60c5\u9875\u4e0d\u518d\u663e\u793a\u8bc4\u8bba\u5217\u8868',\n"
+              "    leading: Icon(MdiIcons.commentTextOutline),\n"
+              "    setKey: 'showDynReply',\n"
+              "    defaultVal: false,\n"
+              "  ),\n"
+          )
+          assert anchor in s, 'anchor reply_settings not found'
+          write(p, s.replace(anchor, add, 1))
+
+          p = 'lib/pages/common/dyn/common_dyn_page.dart'
+          s = read(p)
+          old = (
+              "  late final TabController tabController;\n"
+              "\n"
+              "  @override\n"
+              "  void initState() {\n"
+              "    super.initState();\n"
+              "    tabController = TabController(\n"
+              "      length: DynType.values.length,\n"
+              "      initialIndex: DynType.reply.index,\n"
+              "      vsync: this,\n"
+              "    );\n"
+              "  }\n"
+          )
+          new = (
+              "  late final TabController tabController;\n"
+              "\n"
+              "  late final List<DynType> dynTabs;\n"
+              "\n"
+              "  @override\n"
+              "  void initState() {\n"
+              "    super.initState();\n"
+              "    dynTabs = GStorage.setting.get('showDynReply', defaultValue: false)\n"
+              "        ? DynType.values\n"
+              "        : DynType.values.where((e) => e != DynType.reply).toList();\n"
+              "    final replyIndex = dynTabs.indexOf(DynType.reply);\n"
+              "    tabController = TabController(\n"
+              "      length: dynTabs.length,\n"
+              "      initialIndex: replyIndex < 0 ? 0 : replyIndex,\n"
+              "      vsync: this,\n"
+              "    );\n"
+              "  }\n"
+          )
+          assert old in s, 'anchor common_dyn_page not found'
+          write(p, s.replace(old, new, 1))
+
+          p = 'lib/pages/dynamics_detail/view.dart'
+          s = read(p)
+          reps = [
+              (
+                  "import 'package:PiliPlus/utils/share_utils.dart';",
+                  "import 'package:PiliPlus/utils/share_utils.dart';\n"
+                  "import 'package:PiliPlus/utils/storage.dart';",
+              ),
+              ("switch (value) {", "switch (dynTabs[value]) {"),
+              ("                case 0:", "                case .repost:"),
+              ("                case 1:", "                case .reply:"),
+              ("                case 2:", "                case .like:"),
+              ("tabs: DynType.values", "tabs: dynTabs"),
+              ("children: DynType.values", "children: dynTabs"),
+              (
+                  "      return fabButton;",
+                  "      return GStorage.setting.get('showDynReply', defaultValue: false)\n"
+                  "          ? fabButton\n"
+                  "          : const SizedBox.shrink();",
+              ),
+              (
+                  "                Expanded(\n"
+                  "                  child: textIconButton(\n"
+                  "                    icon: FontAwesomeIcons.comment,\n"
+                  "                    text: '\u8bc4\u8bba',\n"
+                  "                    stat: moduleStat?.comment,\n"
+                  "                    onPressed: _jumpToComment,\n"
+                  "                  ),\n"
+                  "                ),",
+                  "                if (GStorage.setting.get('showDynReply', defaultValue: false))\n"
+                  "                  Expanded(\n"
+                  "                    child: textIconButton(\n"
+                  "                      icon: FontAwesomeIcons.comment,\n"
+                  "                      text: '\u8bc4\u8bba',\n"
+                  "                      stat: moduleStat?.comment,\n"
+                  "                      onPressed: _jumpToComment,\n"
+                  "                    ),\n"
+                  "                  ),",
+              ),
+              (
+                  "  void _jumpToComment([_]) {\n"
+                  "    if (!isPortrait) return;",
+                  "  void _jumpToComment([_]) {\n"
+                  "    if (!isPortrait) return;\n"
+                  "    if (!GStorage.setting.get('showDynReply', defaultValue: false)) return;",
+              ),
+          ]
+          for a, b in reps:
+              assert a in s, 'missing fragment: ' + a[:48].replace('\n', '\\n')
+              s = s.replace(a, b, 1)
+          write(p, s)
+
+          print('patched 3 files')
+          PY
+          git --no-pager diff --stat
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            android/*.gradle*
+            android/**/gradle-wrapper.properties
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.9
+          cache: true
+
+      - name: Apply framework patches
+        shell: pwsh
+        run: lib/scripts/patch.ps1 android
+
+      - name: Write version
+        shell: pwsh
+        run: lib/scripts/build.ps1 android
+
+      - name: Build APK
+        run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --no-pub
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: PiliPlus-noDynComment
+          path: build/app/outputs/flutter-apk/app-*-release.apk
+          if-no-files-found: error
