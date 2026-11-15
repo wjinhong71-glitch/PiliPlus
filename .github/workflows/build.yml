@@ -1,173 +1,177 @@
-name: Build
+name: pili-hide-dyn-comment
 
 on:
-    # pull_request:
-    #     types:
-    #         - opened
-    #         - synchronize
-    #         - reopened
-    #         - ready_for_review
-    #     paths-ignore:
-    #         - "**.md"
-    workflow_dispatch:
-        inputs:
-            build_android:
-                description: "Build Android"
-                required: false
-                default: true
-                type: boolean
-
-            build_ios:
-                description: "Build iOS"
-                required: false
-                default: true
-                type: boolean
-
-            build_mac:
-                description: "Build Mac"
-                required: false
-                default: true
-                type: boolean
-
-            build_win_x64:
-                description: "Build Win-x64"
-                required: false
-                default: true
-                type: boolean
-
-            build_linux_x64:
-                description: "Build Linux-x64"
-                required: false
-                default: true
-                type: boolean
-
-            tag:
-                description: "tag"
-                required: false
-                default: ""
-                type: string
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/build.yml'
 
 jobs:
-    android:
-        if: ${{ (github.event_name == 'pull_request' && github.repository == 'bggRGjQaUbCoE/PiliPlus') || github.event.inputs.build_android == 'true' }}
-        name: Release Android
-        runs-on: ubuntu-latest
-        permissions: write-all
-
-        steps:
-            - name: 代码迁出
-              uses: actions/checkout@v7
-              with:
-                  fetch-depth: 0
-
-            - name: 构建Java环境
-              uses: actions/setup-java@v5
-              with:
-                  distribution: "zulu"
-                  java-version: "17"
-                  cache: "gradle"
-                  cache-dependency-path: |
-                      android/*.gradle*
-                      android/**/gradle-wrapper.properties
-
-            - name: 安装Flutter
-              uses: subosito/flutter-action@v2
-              id: flutter-action
-              with:
-                  channel: stable
-                  flutter-version-file: pubspec.yaml
-                  cache: true
-
-            - name: Apply Patch
-              shell: pwsh
-              run: lib/scripts/patch.ps1 android
-
-            - name: Write key
-              if: github.event_name == 'workflow_dispatch'
-              run: |
-                  if [ ! -z "${{ secrets.SIGN_KEYSTORE_BASE64 }}" ]; then
-                    echo "${{ secrets.SIGN_KEYSTORE_BASE64 }}" | base64 --decode > android/app/key.jks
-                    echo storeFile='key.jks' >> android/key.properties
-                    echo storePassword='${{ secrets.KEYSTORE_PASSWORD }}' >> android/key.properties
-                    echo keyAlias='${{ secrets.KEY_ALIAS }}' >> android/key.properties
-                    echo keyPassword='${{ secrets.KEY_PASSWORD }}' >> android/key.properties
-                  fi
-
-            - name: Set and Extract version
-              if: ${{ github.event_name == 'workflow_dispatch' }}
-              shell: pwsh
-              run: lib/scripts/build.ps1 android
-
-            - name: Flutter Build Release Apk
-              if: ${{ github.event_name == 'workflow_dispatch' }}
-              run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --no-pub
-
-            - name: Flutter Build Dev Apk
-              if: ${{ github.event_name == 'pull_request' }}
-              run: |
-                  flutter build apk --release --split-per-abi --android-project-arg dev=1 --no-pub
-
-            - name: Rename
-              run: |
-                  for file in build/app/outputs/flutter-apk/app-*-release.apk; do
-                    abi=$(echo "$file" | sed -E 's|.*app-(.*)-release\.apk|\1|')
-                    mv "$file" "PiliPlus_android_${{ env.version }}_${abi}.apk"
-                  done
-              shell: bash
-
-            - name: Release
-              if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
-              uses: softprops/action-gh-release@v3
-              with:
-                  tag_name: ${{ github.event.inputs.tag }}
-                  name: ${{ github.event.inputs.tag }}
-                  files: PiliPlus_android_*.apk
-
-            - name: 上传
-              uses: actions/upload-artifact@v7
-              with:
-                  archive: false
-                  name: Android_arm64-v8a
-                  path: PiliPlus_android_*_arm64-v8a.apk
-
-            - name: 上传
-              uses: actions/upload-artifact@v7
-              with:
-                  archive: false
-                  name: Android_armeabi-v7a
-                  path: PiliPlus_android_*_armeabi-v7a.apk
-
-            - name: 上传
-              uses: actions/upload-artifact@v7
-              with:
-                  archive: false
-                  name: Android_x86_64
-                  path: PiliPlus_android_*_x86_64.apk
-
-    ios:
-        if: ${{ (github.event_name == 'pull_request' && github.repository == 'bggRGjQaUbCoE/PiliPlus') || github.event.inputs.build_ios == 'true' }}
-        uses: ./.github/workflows/ios.yml
-        permissions: write-all
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout upstream
+        uses: actions/checkout@v4
         with:
-            tag: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+          repository: bggRGjQaUbCoE/PiliPlus
+          ref: 217fb54f51f6764176319bbdedab2a7522d75401
+          fetch-depth: 0
 
-    mac:
-        if: ${{ github.event.inputs.build_mac == 'true' }}
-        uses: ./.github/workflows/mac.yml
-        permissions: write-all
-        with:
-            tag: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+      - name: Patch dart sources
+        run: |
+          python3 - <<'PY'
+          import io
 
-    win_x64:
-        if: ${{ (github.event_name == 'pull_request' && github.repository == 'bggRGjQaUbCoE/PiliPlus') || github.event.inputs.build_win_x64 == 'true' }}
-        uses: ./.github/workflows/win_x64.yml
-        permissions: write-all
-        with:
-            tag: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+          def read(p):
+              return io.open(p, encoding='utf-8').read()
 
-    linux_x64:
-        if: ${{ github.event.inputs.build_linux_x64 == 'true' }}
-        uses: ./.github/workflows/linux_x64.yml
-        permissions: write-all
+          def write(p, s):
+              io.open(p, 'w', encoding='utf-8').write(s)
+
+          p = 'lib/pages/setting/models/reply_settings.dart'
+          s = read(p)
+          anchor = (
+              "    setKey: SettingBoxKey.showBangumiReply,\n"
+              "    defaultVal: true,\n"
+              "  ),\n"
+          )
+          add = anchor + (
+              "  const SwitchModel(\n"
+              "    title: '\u663e\u793a\u52a8\u6001\u8bc4\u8bba',\n"
+              "    subtitle: '\u5173\u95ed\u540e\u52a8\u6001\u8be6\u60c5\u9875\u4e0d\u518d\u663e\u793a\u8bc4\u8bba\u5217\u8868',\n"
+              "    leading: Icon(MdiIcons.commentTextOutline),\n"
+              "    setKey: 'showDynReply',\n"
+              "    defaultVal: false,\n"
+              "  ),\n"
+          )
+          assert anchor in s, 'anchor reply_settings not found'
+          write(p, s.replace(anchor, add, 1))
+
+          p = 'lib/pages/common/dyn/common_dyn_page.dart'
+          s = read(p)
+          old = (
+              "  late final TabController tabController;\n"
+              "\n"
+              "  @override\n"
+              "  void initState() {\n"
+              "    super.initState();\n"
+              "    tabController = TabController(\n"
+              "      length: DynType.values.length,\n"
+              "      initialIndex: DynType.reply.index,\n"
+              "      vsync: this,\n"
+              "    );\n"
+              "  }\n"
+          )
+          new = (
+              "  late final TabController tabController;\n"
+              "\n"
+              "  late final List<DynType> dynTabs;\n"
+              "\n"
+              "  @override\n"
+              "  void initState() {\n"
+              "    super.initState();\n"
+              "    dynTabs = GStorage.setting.get('showDynReply', defaultValue: false)\n"
+              "        ? DynType.values\n"
+              "        : DynType.values.where((e) => e != DynType.reply).toList();\n"
+              "    final replyIndex = dynTabs.indexOf(DynType.reply);\n"
+              "    tabController = TabController(\n"
+              "      length: dynTabs.length,\n"
+              "      initialIndex: replyIndex < 0 ? 0 : replyIndex,\n"
+              "      vsync: this,\n"
+              "    );\n"
+              "  }\n"
+          )
+          assert old in s, 'anchor common_dyn_page not found'
+          write(p, s.replace(old, new, 1))
+
+          p = 'lib/pages/dynamics_detail/view.dart'
+          s = read(p)
+          reps = [
+              (
+                  "import 'package:PiliPlus/utils/share_utils.dart';",
+                  "import 'package:PiliPlus/utils/share_utils.dart';\n"
+                  "import 'package:PiliPlus/utils/storage.dart';",
+              ),
+              ("switch (value) {", "switch (dynTabs[value]) {"),
+              ("                case 0:", "                case .repost:"),
+              ("                case 1:", "                case .reply:"),
+              ("                case 2:", "                case .like:"),
+              ("tabs: DynType.values", "tabs: dynTabs"),
+              ("children: DynType.values", "children: dynTabs"),
+              (
+                  "      return fabButton;",
+                  "      return GStorage.setting.get('showDynReply', defaultValue: false)\n"
+                  "          ? fabButton\n"
+                  "          : const SizedBox.shrink();",
+              ),
+              (
+                  "                Expanded(\n"
+                  "                  child: textIconButton(\n"
+                  "                    icon: FontAwesomeIcons.comment,\n"
+                  "                    text: '\u8bc4\u8bba',\n"
+                  "                    stat: moduleStat?.comment,\n"
+                  "                    onPressed: _jumpToComment,\n"
+                  "                  ),\n"
+                  "                ),",
+                  "                if (GStorage.setting.get('showDynReply', defaultValue: false))\n"
+                  "                  Expanded(\n"
+                  "                    child: textIconButton(\n"
+                  "                      icon: FontAwesomeIcons.comment,\n"
+                  "                      text: '\u8bc4\u8bba',\n"
+                  "                      stat: moduleStat?.comment,\n"
+                  "                      onPressed: _jumpToComment,\n"
+                  "                    ),\n"
+                  "                  ),",
+              ),
+              (
+                  "  void _jumpToComment([_]) {\n"
+                  "    if (!isPortrait) return;",
+                  "  void _jumpToComment([_]) {\n"
+                  "    if (!isPortrait) return;\n"
+                  "    if (!GStorage.setting.get('showDynReply', defaultValue: false)) return;",
+              ),
+          ]
+          for a, b in reps:
+              assert a in s, 'missing fragment: ' + a[:48].replace('\n', '\\n')
+              s = s.replace(a, b, 1)
+          write(p, s)
+
+          print('patched 3 files')
+          PY
+          git --no-pager diff --stat
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
         with:
-            tag: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || '' }}
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            android/*.gradle*
+            android/**/gradle-wrapper.properties
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.9
+          cache: true
+
+      - name: Apply framework patches
+        shell: pwsh
+        run: lib/scripts/patch.ps1 android
+
+      - name: Write version
+        shell: pwsh
+        run: lib/scripts/build.ps1 android
+
+      - name: Build APK
+        run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --no-pub
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: PiliPlus-noDynComment
+          path: build/app/outputs/flutter-apk/app-*-release.apk
+          if-no-files-found: error
