@@ -137,7 +137,62 @@ jobs:
               s = s.replace(a, b, 1)
           write(p, s)
 
-          print('patched 3 files')
+          p = 'lib/pages/dynamics/widgets/action_panel.dart'
+          s = read(p)
+          s = s.replace(
+              "import 'package:PiliPlus/utils/num_utils.dart';",
+              "import 'package:PiliPlus/utils/num_utils.dart';\n"
+              "import 'package:PiliPlus/utils/storage.dart';",
+              1,
+          )
+          old_btn = (
+              "        Expanded(\n"
+              "          child: TextButton.icon(\n"
+              "            onPressed: () => PageUtils.pushDynDetail(\n"
+              "              item,\n"
+              "              isPush: true,\n"
+              "              viewComment: true,\n"
+              "            ),\n"
+              "            icon: Icon(\n"
+              "              FontAwesomeIcons.comment,\n"
+              "              size: 16,\n"
+              "              color: outline,\n"
+              '              semanticLabel: "\u8bc4\u8bba",\n'
+              "            ),\n"
+              "            style: btnStyle,\n"
+              "            label: Text(\n"
+              "              comment.count != null ? NumUtils.numFormat(comment.count) : '\u8bc4\u8bba',\n"
+              "            ),\n"
+              "          ),\n"
+              "        ),"
+          )
+          new_btn = (
+              "        if (GStorage.setting.get('showDynReply', defaultValue: false))\n"
+              "          Expanded(\n"
+              "            child: TextButton.icon(\n"
+              "              onPressed: () => PageUtils.pushDynDetail(\n"
+              "                item,\n"
+              "                isPush: true,\n"
+              "                viewComment: true,\n"
+              "              ),\n"
+              "              icon: Icon(\n"
+              "                FontAwesomeIcons.comment,\n"
+              "                size: 16,\n"
+              "                color: outline,\n"
+              '                semanticLabel: "\u8bc4\u8bba",\n'
+              "              ),\n"
+              "              style: btnStyle,\n"
+              "              label: Text(\n"
+              "                comment.count != null ? NumUtils.numFormat(comment.count) : '\u8bc4\u8bba',\n"
+              "              ),\n"
+              "            ),\n"
+              "          ),"
+          )
+          assert old_btn in s, 'action_panel comment button not found'
+          s = s.replace(old_btn, new_btn, 1)
+          write(p, s)
+
+          print('patched 4 files')
           PY
           git --no-pager diff --stat
 
@@ -172,6 +227,6 @@ jobs:
       - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: PiliPlus-noDynComment
+          name: PiliPlus-noDynComment2
           path: build/app/outputs/flutter-apk/app-*-release.apk
           if-no-files-found: error
