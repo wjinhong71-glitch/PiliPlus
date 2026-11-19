@@ -427,6 +427,193 @@ jobs:
           def rep(p, pairs):
               s = read(p)
               for a, b in pairs:
+                  assert a in s, f'{p}: missing {a[:50]!r}'
+                  s = s.replace(a, b, 1)
+              write(p, s)
+
+          # 1) 消息页：三个入口完全不渲染
+          rep('lib/pages/whisper/controller.dart', [
+              ("    msgFeedTopItems = [\n",
+               "    final allItems = <MsgFeedTopItem>[\n"),
+              ("    ];\n    unreadCounts = List.filled(msgFeedTopItems.length, 0).obs;\n",
+               "    ];\n"
+               "    msgFeedTopItems = allItems.where((e) => e.enabled).toList();\n"
+               "    unreadCounts = List.filled(msgFeedTopItems.length, 0).obs;\n"),
+              ("      final unreadCounts = [\n"
+               "        disableReplyMeMsg ? 0 : data.reply,\n"
+               "        disableAtMeMsg ? 0 : data.at,\n"
+               "        disableLikeMsg ? 0 : data.like,\n"
+               "        data.sysMsg,\n"
+               "      ];\n",
+               "      final enabled = [\n"
+               "        !disableReplyMeMsg,\n"
+               "        !disableAtMeMsg,\n"
+               "        !disableLikeMsg,\n"
+               "        true,\n"
+               "      ];\n"
+               "      final counts = [data.reply, data.at, data.like, data.sysMsg];\n"
+               "      final unreadCounts = [\n"
+               "        for (var i = 0; i < counts.length; i++)\n"
+               "          if (enabled[i]) counts[i],\n"
+               "      ];\n"),
+          ])
+
+          # 2) 我的评论：每条右侧垃圾桶 + 确认后真删
+          rep('lib/pages/my_reply/view.dart', [
+              ("                      (context, index) => ReplyItemGrpc(\n"
+               "                        replyLevel: 0,\n"
+               "                        needDivider: false,\n"
+               "                        replyItem: _replies[index],\n"
+               "                        replyReply: _replyReply,\n"
+               "                        onDelete: (_, _) { _onDelete(index); },\n"
+               "                        onCheckReply: _onCheckReply,\n"
+               "                      ),\n",
+               "                      (context, index) => Stack(\n"
+               "                        children: [\n"
+               "                          ReplyItemGrpc(\n"
+               "                            replyLevel: 0,\n"
+               "                            needDivider: false,\n"
+               "                            replyItem: _replies[index],\n"
+               "                            replyReply: _replyReply,\n"
+               "                            onDelete: (_, _) { _onDelete(index); },\n"
+               "                            onCheckReply: _onCheckReply,\n"
+               "                          ),\n"
+               "                          Positioned(\n"
+               "                            top: 0,\n"
+               "                            right: 0,\n"
+               "                            child: IconButton(\n"
+               "                              tooltip: '删除',\n"
+               "                              visualDensity: VisualDensity.compact,\n"
+               "                              onPressed: () => _confirmDelete(index),\n"
+               "                              icon: const Icon(\n"
+               "                                Icons.delete_outline,\n"
+               "                                size: 18,\n"
+               "                              ),\n"
+               "                            ),\n"
+               "                          ),\n"
+               "                        ],\n"
+               "                      ),\n"),
+              ("  Future<void> _onDelete(int index) async {\n",
+               "  Future<void> _confirmDelete(int index) async {\n"
+               "    final ok = await showDialog<bool>(\n"
+               "      context: context,\n"
+               "      builder: (context) => AlertDialog(\n"
+               "        title: const Text('删除这条评论？'),\n"
+               "        content: const Text('删除后所有人都看不到，且无法恢复。'),\n"
+               "        actions: [\n"
+               "          TextButton(\n"
+               "            onPressed: () => Navigator.pop(context, false),\n"
+               "            child: const Text('取消'),\n"
+               "          ),\n"
+               "          TextButton(\n"
+               "            onPressed: () => Navigator.pop(context, true),\n"
+               "            child: const Text('删除'),\n"
+               "          ),\n"
+               "        ],\n"
+               "      ),\n"
+               "    );\n"
+               "    if (ok == true && mounted) {\n"
+               "      await _onDelete(index);\n"
+               "    }\n"
+               "  }\n"
+               "\n"
+               "  Future<void> _onDelete(int index) async {\n"),
+          ])
+          print('patched phase6 (2 files)')
+
+          import io
+
+          def read(p): return io.open(p, encoding='utf-8').read()
+          def write(p, s): io.open(p, 'w', encoding='utf-8').write(s)
+          def rep(p, pairs):
+              s = read(p)
+              for a, b in pairs:
+                  assert a in s, f'{p}: missing {a[:50]!r}'
+                  s = s.replace(a, b, 1)
+              write(p, s)
+
+          # A. 新增开关 key / pref / 设置项
+          rep('lib/utils/storage_key.dart', [(
+              "      disableLikeMsg = 'disableLikeMsg',\n",
+              "      disableLikeMsg = 'disableLikeMsg',\n"
+              "      blockReply = 'blockReply',\n",
+          )])
+
+          rep('lib/utils/storage_pref.dart', [(
+              "  static bool get disableLikeMsg =>\n"
+              "      _setting.get(SettingBoxKey.disableLikeMsg, defaultValue: false);\n",
+              "  static bool get disableLikeMsg =>\n"
+              "      _setting.get(SettingBoxKey.disableLikeMsg, defaultValue: false);\n"
+              "\n"
+              "  /// 禁止发表评论 / 回复（默认开启）\n"
+              "  static bool get blockReply =>\n"
+              "      _setting.get(SettingBoxKey.blockReply, defaultValue: true);\n",
+          )])
+
+          rep('lib/pages/setting/models/extra_settings.dart', [(
+              "  const SwitchModel(\n"
+              "    title: '启用HTTP/2',\n",
+              "  const SwitchModel(\n"
+              "    title: '禁止发表评论和回复',\n"
+              "    subtitle: '所有回复入口都会被拦下，无法输入内容',\n"
+              "    leading: Icon(Icons.block_outlined),\n"
+              "    setKey: SettingBoxKey.blockReply,\n"
+              "    defaultVal: true,\n"
+              "  ),\n"
+              "  const SwitchModel(\n"
+              "    title: '启用HTTP/2',\n",
+          )])
+
+          # B. 两个发评论入口统一拦截
+          rep('lib/pages/common/reply/reply_controller.dart', [(
+              "  void onReply(\n"
+              "    ReplyInfo? replyItem, {\n"
+              "    int? oid,\n"
+              "    int? replyType,\n"
+              "    MentionItem? mentionItem,\n"
+              "  }) {\n",
+              "  void onReply(\n"
+              "    ReplyInfo? replyItem, {\n"
+              "    int? oid,\n"
+              "    int? replyType,\n"
+              "    MentionItem? mentionItem,\n"
+              "  }) {\n"
+              "    if (Pref.blockReply) {\n"
+              "      SmartDialog.showToast('已禁止发表评论');\n"
+              "      return;\n"
+              "    }\n",
+          )])
+
+          rep('lib/pages/video/reply_reply/controller.dart', [(
+              "  Future<ReplyInfo?> _sendReply(ReplyInfo replyItem) async {\n"
+              "    final (bool inputDisable, String? hint) = replyHint;\n"
+              "    if (inputDisable) return null;\n",
+              "  Future<ReplyInfo?> _sendReply(ReplyInfo replyItem) async {\n"
+              "    if (Pref.blockReply) {\n"
+              "      SmartDialog.showToast('已禁止发表评论');\n"
+              "      return null;\n"
+              "    }\n"
+              "    final (bool inputDisable, String? hint) = replyHint;\n"
+              "    if (inputDisable) return null;\n",
+          )])
+
+          # C. 楼中楼控制器需要弹窗组件
+          _p = 'lib/pages/video/reply_reply/controller.dart'
+          _s = read(_p)
+          if "flutter_smart_dialog" not in _s:
+              _a = "import 'package:PiliPlus/utils/storage_pref.dart';"
+              assert _a in _s
+              _s = _s.replace(_a, _a + "\nimport 'package:flutter_smart_dialog/flutter_smart_dialog.dart';", 1)
+              write(_p, _s)
+          print('patched phase7 (5 files)')
+
+          import io
+
+          def read(p): return io.open(p, encoding='utf-8').read()
+          def write(p, s): io.open(p, 'w', encoding='utf-8').write(s)
+          def rep(p, pairs):
+              s = read(p)
+              for a, b in pairs:
                   assert a in s, f'{p}: missing {a[:40]!r}'
                   s = s.replace(a, b, 1)
               write(p, s)
