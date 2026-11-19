@@ -1,0 +1,303 @@
+name: pili-hide-dyn-comment
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/pili-hide-dyn-comment.yml'
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout upstream
+        uses: actions/checkout@v4
+        with:
+          repository: bggRGjQaUbCoE/PiliPlus
+          ref: 217fb54f51f6764176319bbdedab2a7522d75401
+          fetch-depth: 0
+
+      - name: Patch dart sources
+        run: |
+          python3 - <<'PY'
+          import io
+
+          def read(p):
+              return io.open(p, encoding='utf-8').read()
+
+          def write(p, s):
+              io.open(p, 'w', encoding='utf-8').write(s)
+
+          # 1) 评论设置页：新增「显示动态评论」，默认关闭
+          p = 'lib/pages/setting/models/reply_settings.dart'
+          s = read(p)
+          anchor = (
+              "    setKey: SettingBoxKey.showBangumiReply,\n"
+              "    defaultVal: true,\n"
+              "  ),\n"
+          )
+          add = anchor + (
+              "  const SwitchModel(\n"
+              "    title: '显示动态评论',\n"
+              "    subtitle: '关闭后动态详情页不再显示评论列表',\n"
+              "    leading: Icon(MdiIcons.commentTextOutline),\n"
+              "    setKey: 'showDynReply',\n"
+              "    defaultVal: false,\n"
+              "  ),\n"
+          )
+          assert anchor in s, 'anchor reply_settings not found'
+          write(p, s.replace(anchor, add, 1))
+
+          # 2) 通用动态页：Tab 列表按开关过滤掉「评论」
+          p = 'lib/pages/common/dyn/common_dyn_page.dart'
+          s = read(p)
+          old = (
+              "  late final TabController tabController;\n"
+              "\n"
+              "  @override\n"
+              "  void initState() {\n"
+              "    super.initState();\n"
+              "    tabController = TabController(\n"
+              "      length: DynType.values.length,\n"
+              "      initialIndex: DynType.reply.index,\n"
+              "      vsync: this,\n"
+              "    );\n"
+              "  }\n"
+          )
+          new = (
+              "  late final TabController tabController;\n"
+              "\n"
+              "  /// 实际展示的 Tab（关闭动态评论时移除「评论」）\n"
+              "  late final List<DynType> dynTabs;\n"
+              "\n"
+              "  @override\n"
+              "  void initState() {\n"
+              "    super.initState();\n"
+              "    dynTabs = GStorage.setting.get('showDynReply', defaultValue: false)\n"
+              "        ? DynType.values\n"
+              "        : DynType.values.where((e) => e != DynType.reply).toList();\n"
+              "    final replyIndex = dynTabs.indexOf(DynType.reply);\n"
+              "    tabController = TabController(\n"
+              "      length: dynTabs.length,\n"
+              "      initialIndex: replyIndex < 0 ? 0 : replyIndex,\n"
+              "      vsync: this,\n"
+              "    );\n"
+              "  }\n"
+          )
+          assert old in s, 'anchor common_dyn_page not found'
+          write(p, s.replace(old, new, 1))
+
+          # 3) 动态详情页：使用 dynTabs，并隐藏评论入口
+          p = 'lib/pages/dynamics_detail/view.dart'
+          s = read(p)
+          reps = [
+              (
+                  "import 'package:PiliPlus/utils/share_utils.dart';",
+                  "import 'package:PiliPlus/utils/share_utils.dart';\n"
+                  "import 'package:PiliPlus/utils/storage.dart';",
+              ),
+              (
+                  "switch (value) {",
+                  "switch (dynTabs[value]) {",
+              ),
+              (
+                  "                case 0:",
+                  "                case .repost:",
+              ),
+              (
+                  "                case 1:",
+                  "                case .reply:",
+              ),
+              (
+                  "                case 2:",
+                  "                case .like:",
+              ),
+              (
+                  "tabs: DynType.values",
+                  "tabs: dynTabs",
+              ),
+              (
+                  "children: DynType.values",
+                  "children: dynTabs",
+              ),
+              (
+                  "      return fabButton;",
+                  "      return GStorage.setting.get('showDynReply', defaultValue: false)\n"
+                  "          ? fabButton\n"
+                  "          : const SizedBox.shrink();",
+              ),
+              (
+                  "                Expanded(\n"
+                  "                  child: textIconButton(\n"
+                  "                    icon: FontAwesomeIcons.comment,\n"
+                  "                    text: '评论',\n"
+                  "                    stat: moduleStat?.comment,\n"
+                  "                    onPressed: _jumpToComment,\n"
+                  "                  ),\n"
+                  "                ),",
+                  "                if (GStorage.setting.get('showDynReply', defaultValue: false))\n"
+                  "                  Expanded(\n"
+                  "                    child: textIconButton(\n"
+                  "                      icon: FontAwesomeIcons.comment,\n"
+                  "                      text: '评论',\n"
+                  "                      stat: moduleStat?.comment,\n"
+                  "                      onPressed: _jumpToComment,\n"
+                  "                    ),\n"
+                  "                  ),",
+              ),
+              (
+                  "  void _jumpToComment([_]) {\n"
+                  "    if (!isPortrait) return;",
+                  "  void _jumpToComment([_]) {\n"
+                  "    if (!isPortrait) return;\n"
+                  "    if (!GStorage.setting.get('showDynReply', defaultValue: false)) return;",
+              ),
+          ]
+          for a, b in reps:
+              assert a in s, 'missing fragment: ' + a[:48].replace('\n', '\\n')
+              s = s.replace(a, b, 1)
+          write(p, s)
+
+          # 4) 动态卡片底栏：关掉评论时不显示评论数按钮
+          p = 'lib/pages/dynamics/widgets/action_panel.dart'
+          s = read(p)
+          s = s.replace(
+              "import 'package:PiliPlus/utils/num_utils.dart';",
+              "import 'package:PiliPlus/utils/num_utils.dart';\n"
+              "import 'package:PiliPlus/utils/storage.dart';",
+              1,
+          )
+          old_btn = (
+              "        Expanded(\n"
+              "          child: TextButton.icon(\n"
+              "            onPressed: () => PageUtils.pushDynDetail(\n"
+              "              item,\n"
+              "              isPush: true,\n"
+              "              viewComment: true,\n"
+              "            ),\n"
+              "            icon: Icon(\n"
+              "              FontAwesomeIcons.comment,\n"
+              "              size: 16,\n"
+              "              color: outline,\n"
+              '              semanticLabel: "\u8bc4\u8bba",\n'
+              "            ),\n"
+              "            style: btnStyle,\n"
+              "            label: Text(\n"
+              "              comment.count != null ? NumUtils.numFormat(comment.count) : '\u8bc4\u8bba',\n"
+              "            ),\n"
+              "          ),\n"
+              "        ),"
+          )
+          new_btn = (
+              "        if (GStorage.setting.get('showDynReply', defaultValue: false))\n"
+              "          Expanded(\n"
+              "            child: TextButton.icon(\n"
+              "              onPressed: () => PageUtils.pushDynDetail(\n"
+              "                item,\n"
+              "                isPush: true,\n"
+              "                viewComment: true,\n"
+              "              ),\n"
+              "              icon: Icon(\n"
+              "                FontAwesomeIcons.comment,\n"
+              "                size: 16,\n"
+              "                color: outline,\n"
+              '                semanticLabel: "\u8bc4\u8bba",\n'
+              "              ),\n"
+              "              style: btnStyle,\n"
+              "              label: Text(\n"
+              "                comment.count != null ? NumUtils.numFormat(comment.count) : '\u8bc4\u8bba',\n"
+              "              ),\n"
+              "            ),\n"
+              "          ),"
+          )
+          assert old_btn in s, 'action_panel comment button not found'
+          s = s.replace(old_btn, new_btn, 1)
+          write(p, s)
+
+          # 4) my_reply: delete really removes the server comment
+          p = 'lib/pages/my_reply/view.dart'
+          s = read(p)
+          s = s.replace(
+              "import 'package:PiliPlus/grpc/bilibili/main/community/reply/v1.pb.dart'",
+              "import 'package:PiliPlus/http/video.dart';\n"
+              "import 'package:PiliPlus/grpc/bilibili/main/community/reply/v1.pb.dart'",
+              1,
+          )
+          s = s.replace(
+              "import 'package:PiliPlus/utils/app_scheme.dart';",
+              "import 'package:PiliPlus/utils/app_scheme.dart';\n"
+              "import 'package:flutter_smart_dialog/flutter_smart_dialog.dart';",
+              1,
+          )
+          old_cb = "onDelete: (_, _) => _onDelete(index),"
+          new_cb = "onDelete: (_, _) { _onDelete(index); },"
+          assert old_cb in s, 'my_reply onDelete callback not found'
+          s = s.replace(old_cb, new_cb, 1)
+          old_del = (
+              "  void _onDelete(int index) {\n"
+              "    _replies.removeAt(index);\n"
+              "    setState(() {});\n"
+              "  }"
+          )
+          new_del = (
+              "  Future<void> _onDelete(int index) async {\n"
+              "    final item = _replies[index];\n"
+              "    SmartDialog.showLoading(msg: '\\u5220\\u9664\\u4e2d...');\n"
+              "    final res = await VideoHttp.replyDel(\n"
+              "      type: item.type.toInt(),\n"
+              "      oid: item.oid.toInt(),\n"
+              "      rpid: item.id.toInt(),\n"
+              "    );\n"
+              "    SmartDialog.dismiss();\n"
+              "    if (res.isSuccess) {\n"
+              "      SmartDialog.showToast('\\u5220\\u9664\\u6210\\u529f');\n"
+              "      _replies.removeAt(index);\n"
+              "      setState(() {});\n"
+              "    } else {\n"
+              "      SmartDialog.showToast('\\u5220\\u9664\\u5931\\u8d25\\uff0c\\u8bf7\\u91cd\\u65b0\\u767b\\u5f55\\u540e\\u91cd\\u8bd5');\n"
+              "    }\n"
+              "  }"
+          )
+          assert old_del in s, 'my_reply _onDelete not found'
+          s = s.replace(old_del, new_del, 1)
+          write(p, s)
+
+          print('patched 4 files')
+          PY
+          git --no-pager diff --stat
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: '17'
+          cache: gradle
+          cache-dependency-path: |
+            android/*.gradle*
+            android/**/gradle-wrapper.properties
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: 3.47.9
+          cache: true
+
+      - name: Apply framework patches
+        shell: pwsh
+        run: lib/scripts/patch.ps1 android
+
+      - name: Write version
+        shell: pwsh
+        run: lib/scripts/build.ps1 android
+
+      - name: Build APK
+        run: flutter build apk --release --split-per-abi --dart-define-from-file=pili_release.json --no-pub
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: PiliPlus-noDynComment
+          path: build/app/outputs/flutter-apk/app-*-release.apk
+          if-no-files-found: error
