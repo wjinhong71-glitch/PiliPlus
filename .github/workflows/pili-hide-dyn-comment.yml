@@ -264,6 +264,161 @@ jobs:
           write(p, s)
 
           print('patched 4 files')
+
+          import io
+
+          def read(p): return io.open(p, encoding='utf-8').read()
+          def write(p, s): io.open(p, 'w', encoding='utf-8').write(s)
+          def rep(p, pairs):
+              s = read(p)
+              for a, b in pairs:
+                  assert a in s, f'{p}: missing {a[:40]!r}'
+                  s = s.replace(a, b, 1)
+              write(p, s)
+
+          # A. storage keys
+          rep('lib/utils/storage_key.dart', [(
+              "      disableLikeMsg = 'disableLikeMsg',\n",
+              "      disableLikeMsg = 'disableLikeMsg',\n"
+              "      disableReplyMeMsg = 'disableReplyMeMsg',\n"
+              "      disableAtMeMsg = 'disableAtMeMsg',\n",
+          )])
+
+          # B. prefs
+          rep('lib/utils/storage_pref.dart', [(
+              "  static bool get disableLikeMsg =>\n"
+              "      _setting.get(SettingBoxKey.disableLikeMsg, defaultValue: false);\n",
+              "  static bool get disableLikeMsg =>\n"
+              "      _setting.get(SettingBoxKey.disableLikeMsg, defaultValue: false);\n"
+              "\n"
+              "  static bool get disableReplyMeMsg =>\n"
+              "      _setting.get(SettingBoxKey.disableReplyMeMsg, defaultValue: false);\n"
+              "\n"
+              "  static bool get disableAtMeMsg =>\n"
+              "      _setting.get(SettingBoxKey.disableAtMeMsg, defaultValue: false);\n",
+          )])
+
+          # C. settings page
+          rep('lib/pages/setting/models/extra_settings.dart', [(
+              "  const SwitchModel(\n"
+              "    title: '消息页禁用\"收到的赞\"功能',\n"
+              "    subtitle: '禁止打开入口，降低网络社交依赖',\n"
+              "    leading: Icon(Icons.beach_access_outlined),\n"
+              "    setKey: SettingBoxKey.disableLikeMsg,\n"
+              "    defaultVal: false,\n"
+              "  ),\n",
+              "  const SwitchModel(\n"
+              "    title: '消息页禁用\"收到的赞\"功能',\n"
+              "    subtitle: '禁止打开入口，降低网络社交依赖',\n"
+              "    leading: Icon(Icons.beach_access_outlined),\n"
+              "    setKey: SettingBoxKey.disableLikeMsg,\n"
+              "    defaultVal: false,\n"
+              "  ),\n"
+              "  const SwitchModel(\n"
+              "    title: '消息页禁用\"回复我的\"功能',\n"
+              "    subtitle: '禁止打开入口，降低网络社交依赖',\n"
+              "    leading: Icon(Icons.message_outlined),\n"
+              "    setKey: SettingBoxKey.disableReplyMeMsg,\n"
+              "    defaultVal: false,\n"
+              "  ),\n"
+              "  const SwitchModel(\n"
+              "    title: '消息页禁用\"@我\"功能',\n"
+              "    subtitle: '禁止打开入口，降低网络社交依赖',\n"
+              "    leading: Icon(Icons.alternate_email_outlined),\n"
+              "    setKey: SettingBoxKey.disableAtMeMsg,\n"
+              "    defaultVal: false,\n"
+              "  ),\n",
+          )])
+
+          # D. whisper controller
+          rep('lib/pages/whisper/controller.dart', [
+              ("  final disableLikeMsg = Pref.disableLikeMsg;\n",
+               "  final disableLikeMsg = Pref.disableLikeMsg;\n"
+               "  final disableReplyMeMsg = Pref.disableReplyMeMsg;\n"
+               "  final disableAtMeMsg = Pref.disableAtMeMsg;\n"),
+              ("      const (\n"
+               "        name: \"回复我的\",\n"
+               "        icon: Icons.message_outlined,\n"
+               "        route: \"/replyMe\",\n"
+               "        enabled: true,\n"
+               "      ),\n"
+               "      const (\n"
+               "        name: \"@我\",\n"
+               "        icon: Icons.alternate_email_outlined,\n"
+               "        route: \"/atMe\",\n"
+               "        enabled: true,\n"
+               "      ),\n",
+               "      (\n"
+               "        name: \"回复我的\",\n"
+               "        icon: Icons.message_outlined,\n"
+               "        route: \"/replyMe\",\n"
+               "        enabled: !disableReplyMeMsg,\n"
+               "      ),\n"
+               "      (\n"
+               "        name: \"@我\",\n"
+               "        icon: Icons.alternate_email_outlined,\n"
+               "        route: \"/atMe\",\n"
+               "        enabled: !disableAtMeMsg,\n"
+               "      ),\n"),
+              ("      final unreadCounts = [\n"
+               "        data.reply,\n"
+               "        data.at,\n",
+               "      final unreadCounts = [\n"
+               "        disableReplyMeMsg ? 0 : data.reply,\n"
+               "        disableAtMeMsg ? 0 : data.at,\n"),
+          ])
+
+          # E. main controller unread badge
+          rep('lib/pages/main/controller.dart', [
+              ("            case MsgUnReadType.reply:\n"
+               "              count += response.reply;\n"
+               "              break;\n"
+               "            case MsgUnReadType.at:\n"
+               "              count += response.at;\n"
+               "              break;\n",
+               "            case MsgUnReadType.reply:\n"
+               "              if (!Pref.disableReplyMeMsg) count += response.reply;\n"
+               "              break;\n"
+               "            case MsgUnReadType.at:\n"
+               "              if (!Pref.disableAtMeMsg) count += response.at;\n"
+               "              break;\n"),
+          ])
+
+          # F. strict keyword filter for search results
+          rep('lib/pages/search_panel/video/controller.dart', [
+              ("  @override\n"
+               "  bool customHandleResponse(bool isRefresh, Success<SearchVideoData> response) {\n"
+               "    if (isRefresh && !_hasJump2Video) {\n"
+               "      _hasJump2Video = true;\n"
+               "      _onPushDetail(response.response.list);\n"
+               "    }\n"
+               "    return super.customHandleResponse(isRefresh, response);\n"
+               "  }\n",
+               "  @override\n"
+               "  bool customHandleResponse(bool isRefresh, Success<SearchVideoData> response) {\n"
+               "    if (isRefresh && !_hasJump2Video) {\n"
+               "      _hasJump2Video = true;\n"
+               "      _onPushDetail(response.response.list);\n"
+               "    }\n"
+               "    _filterByKeyword(response.response.list);\n"
+               "    return super.customHandleResponse(isRefresh, response);\n"
+               "  }\n"
+               "\n"
+               "  /// 只保留标题包含完整搜索词的视频\n"
+               "  void _filterByKeyword(List<SearchVideoItemModel>? list) {\n"
+               "    if (list == null || list.isEmpty) return;\n"
+               "    final kw = keyword.replaceAll(RegExp(r'\\s+'), '').toLowerCase();\n"
+               "    if (kw.isEmpty) return;\n"
+               "    list.removeWhere((e) {\n"
+               "      final title = (e.title ?? '')\n"
+               "          .replaceAll(RegExp(r'<[^>]+>'), '')\n"
+               "          .replaceAll(RegExp(r'\\s+'), '')\n"
+               "          .toLowerCase();\n"
+               "      return !title.contains(kw);\n"
+               "    });\n"
+               "  }\n"),
+          ])
+          print('patched 6 files')
           PY
           git --no-pager diff --stat
 
