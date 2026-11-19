@@ -292,10 +292,10 @@ jobs:
               "      _setting.get(SettingBoxKey.disableLikeMsg, defaultValue: false);\n"
               "\n"
               "  static bool get disableReplyMeMsg =>\n"
-              "      _setting.get(SettingBoxKey.disableReplyMeMsg, defaultValue: false);\n"
+              "      _setting.get(SettingBoxKey.disableReplyMeMsg, defaultValue: true);\n"
               "\n"
               "  static bool get disableAtMeMsg =>\n"
-              "      _setting.get(SettingBoxKey.disableAtMeMsg, defaultValue: false);\n",
+              "      _setting.get(SettingBoxKey.disableAtMeMsg, defaultValue: true);\n",
           )])
 
           # C. settings page
@@ -319,14 +319,14 @@ jobs:
               "    subtitle: '禁止打开入口，降低网络社交依赖',\n"
               "    leading: Icon(Icons.message_outlined),\n"
               "    setKey: SettingBoxKey.disableReplyMeMsg,\n"
-              "    defaultVal: false,\n"
+              "    defaultVal: true,\n"
               "  ),\n"
               "  const SwitchModel(\n"
               "    title: '消息页禁用\"@我\"功能',\n"
               "    subtitle: '禁止打开入口，降低网络社交依赖',\n"
               "    leading: Icon(Icons.alternate_email_outlined),\n"
               "    setKey: SettingBoxKey.disableAtMeMsg,\n"
-              "    defaultVal: false,\n"
+              "    defaultVal: true,\n"
               "  ),\n",
           )])
 
