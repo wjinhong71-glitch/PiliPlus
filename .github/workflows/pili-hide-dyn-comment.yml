@@ -419,6 +419,67 @@ jobs:
                "  }\n"),
           ])
           print('patched 6 files')
+
+          import io
+
+          def read(p): return io.open(p, encoding='utf-8').read()
+          def write(p, s): io.open(p, 'w', encoding='utf-8').write(s)
+          def rep(p, pairs):
+              s = read(p)
+              for a, b in pairs:
+                  assert a in s, f'{p}: missing {a[:40]!r}'
+                  s = s.replace(a, b, 1)
+              write(p, s)
+
+          # A. 存储键
+          rep('lib/utils/storage_key.dart', [(
+              "      disableLikeMsg = 'disableLikeMsg',\n",
+              "      disableLikeMsg = 'disableLikeMsg',\n"
+              "      disableSendComment = 'disableSendComment',\n",
+          )])
+
+          # B. 偏好：默认开启（禁用发表评论）
+          rep('lib/utils/storage_pref.dart', [(
+              "  static bool get disableLikeMsg =>\n"
+              "      _setting.get(SettingBoxKey.disableLikeMsg, defaultValue: false);\n",
+              "  static bool get disableLikeMsg =>\n"
+              "      _setting.get(SettingBoxKey.disableLikeMsg, defaultValue: false);\n"
+              "\n"
+              "  /// 禁止发表评论（默认禁止）\n"
+              "  static bool get disableSendComment =>\n"
+              "      _setting.get(SettingBoxKey.disableSendComment, defaultValue: true);\n",
+          )])
+
+          # C. 设置开关
+          rep('lib/pages/setting/models/extra_settings.dart', [(
+              "  const SwitchModel(\n"
+              "    title: '消息页禁用\"收到的赞\"功能',\n",
+              "  const SwitchModel(\n"
+              "    title: '禁止发表评论',\n"
+              "    subtitle: '所有评论、回复都发不出去',\n"
+              "    leading: Icon(Icons.block_outlined),\n"
+              "    setKey: SettingBoxKey.disableSendComment,\n"
+              "    defaultVal: true,\n"
+              "  ),\n"
+              "  const SwitchModel(\n"
+              "    title: '消息页禁用\"收到的赞\"功能',\n",
+          )])
+
+          # D. 发送入口统一拦截
+          rep('lib/http/video.dart', [(
+              "  }) async {\n"
+              "    final data = {\n"
+              "      'type': type,\n"
+              "      'oid': oid,\n",
+              "  }) async {\n"
+              "    if (Pref.disableSendComment) {\n"
+              "      return const Error('评论功能已关闭');\n"
+              "    }\n"
+              "    final data = {\n"
+              "      'type': type,\n"
+              "      'oid': oid,\n",
+          )])
+          print('patched 4 files (disable comment)')
           PY
           git --no-pager diff --stat
 
